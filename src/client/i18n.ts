@@ -1,6 +1,6 @@
 const ru = {
   rulesTitle: 'Правила',
-  rules: (sec: number) => [
+  rules: (sec: number, discord: boolean) => [
     'Играют от 2 человек, ходы идут по кругу.',
     'Первый в круге выбирает букву, следующий пишет английское слово на эту букву.',
     'Дальше каждый пишет слово на последнюю букву предыдущего.',
@@ -10,8 +10,13 @@ const ru = {
     'У каждого 3 ♥. Последний оставшийся побеждает.',
     'Неверное слово не штрафуется — пробуй ещё, пока идёт время.',
     'Русскую раскладку переключать не нужно — буквы переведутся сами.',
-    'Результаты партий и статистика приходят в чат голосового канала.',
+    ...(discord ? ['Результаты партий и статистика приходят в чат голосового канала.'] : []),
   ],
+  yourName: 'Твоё имя',
+  createRoom: 'Создать комнату',
+  join: 'Войти',
+  invite: 'Скопировать ссылку',
+  copied: 'Ссылка скопирована',
   turnTime: 'Время на ход',
   sec: 'с',
   start: 'Начать',
@@ -49,7 +54,7 @@ type Dict = typeof ru;
 
 const en: Dict = {
   rulesTitle: 'Rules',
-  rules: (sec) => [
+  rules: (sec, discord) => [
     '2 or more players, turns go around the circle.',
     'The first player of a round picks a letter; the next one writes an English word starting with it.',
     'Then each word starts with the last letter of the previous one.',
@@ -59,8 +64,13 @@ const en: Dict = {
     'Everyone has 3 ♥. Last one standing wins.',
     'Wrong words aren’t penalized — keep trying while the timer runs.',
     'No need to switch from a Russian keyboard layout — letters convert automatically.',
-    'Results and stats are posted to the voice channel chat.',
+    ...(discord ? ['Results and stats are posted to the voice channel chat.'] : []),
   ],
+  yourName: 'Your name',
+  createRoom: 'Create room',
+  join: 'Join',
+  invite: 'Copy invite link',
+  copied: 'Link copied',
   turnTime: 'Time per turn',
   sec: 's',
   start: 'Start',

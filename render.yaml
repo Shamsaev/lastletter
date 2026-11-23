@@ -13,6 +13,9 @@ services:
         sync: false
       - key: DISCORD_BOT_TOKEN
         sync: false
+      # Website mode: players join by link with just a name (no Discord login).
+      - key: ALLOW_GUESTS
+        value: "1"
       - key: REPORT_TZ
         value: Europe/Moscow
       - key: REPORT_TIME

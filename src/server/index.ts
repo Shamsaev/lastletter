@@ -91,11 +91,11 @@ function maybeReport(room: Room) {
  * Where is this Activity running? Ask Discord (trusted) and fall back to what the client says.
  * https://discord.com/developers/docs/resources/application#get-application-activity-instance
  */
-async function resolveLocation(room: Room, hint: { channelId?: string; guildId?: string }) {
+async function resolveLocation(room: Room, instanceId: string, hint: { channelId?: string; guildId?: string }) {
   if (room.location) return;
   if (BOT_TOKEN && CLIENT_ID) {
     try {
-      const res = await fetch(`${DISCORD_API}/applications/${CLIENT_ID}/activity-instances/${encodeURIComponent(room.id)}`, {
+      const res = await fetch(`${DISCORD_API}/applications/${CLIENT_ID}/activity-instances/${encodeURIComponent(instanceId)}`, {
         headers: { Authorization: `Bot ${BOT_TOKEN}` },
       });
       if (res.ok) {
@@ -275,8 +275,11 @@ wss.on('connection', (ws) => {
         ws.close();
         return;
       }
-      const room = getRoom(roomId);
-      void resolveLocation(room, { channelId: msg.channelId, guildId: msg.guildId });
+      // Website rooms and Discord Activity rooms never mix.
+      const viaDiscord = !!msg.accessToken;
+      const room = getRoom((viaDiscord ? 'dc:' : 'web:') + roomId);
+      // Only Discord players (or tests) may tell us which channel to post stats to.
+      if (viaDiscord || !PROD) void resolveLocation(room, roomId, { channelId: msg.channelId, guildId: msg.guildId });
       conn = { ws, user, room, lastWordAt: 0, alive: true };
       room.conns.add(conn);
       room.emptySince = null;

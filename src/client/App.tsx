@@ -2,14 +2,86 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { MAX_HP, TURN_OPTIONS, type Player, type PlayerInfo, type Snapshot } from '../shared/game';
 import { LETTERS, normalizeInput, quickCheck, type WordError } from '../shared/text';
 import { t } from './i18n';
-import { useGame, type Reject } from './net';
+import {
+  IN_DISCORD,
+  discordIdentity,
+  newRoomCode,
+  roomFromUrl,
+  saveName,
+  savedName,
+  useGame,
+  webIdentity,
+  type Identity,
+  type Reject,
+} from './net';
 import { isMuted, setMuted, sfx } from './sound';
 
 type Send = ReturnType<typeof useGame>['send'];
 type ServerNow = () => number;
 
 export function App() {
-  const { status, you, snap, draft, reject, send, serverNow } = useGame();
+  return IN_DISCORD ? <Game identify={discordIdentity} web={false} /> : <Website />;
+}
+
+// ---------------- website: name → room link ----------------
+
+function Website() {
+  const [room, setRoom] = useState(roomFromUrl);
+  const [name, setName] = useState(savedName);
+
+  useEffect(() => {
+    const onPop = () => setRoom(roomFromUrl());
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+
+  if (room && name) return <Game key={room} identify={() => webIdentity(room, name)} web />;
+
+  const submit = (n: string) => {
+    saveName(n);
+    setName(n);
+    if (!room) {
+      const code = newRoomCode();
+      history.pushState(null, '', `/r/${code}`);
+      setRoom(code);
+    }
+  };
+  return <Home initialName={name} joining={!!room} onSubmit={submit} />;
+}
+
+function Home({ initialName, joining, onSubmit }: { initialName: string; joining: boolean; onSubmit: (name: string) => void }) {
+  const [name, setName] = useState(initialName);
+  const clean = name.trim().slice(0, 24);
+  const go = () => clean && onSubmit(clean);
+  return (
+    <div className="app">
+      <RulesButton turnSeconds={15} web />
+      <div className="screen home">
+        <Logo />
+        <input
+          className="name-input"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && go()}
+          placeholder={t.yourName}
+          aria-label={t.yourName}
+          maxLength={24}
+          autoFocus
+          autoComplete="nickname"
+          spellCheck={false}
+        />
+        <button className="primary" disabled={!clean} onClick={go}>
+          {joining ? t.join : t.createRoom}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ---------------- game ----------------
+
+function Game({ identify, web }: { identify: () => Identity | Promise<Identity>; web: boolean }) {
+  const { status, you, snap, draft, reject, send, serverNow } = useGame(identify);
   const toast = useEventToasts(snap, you);
 
   if (status === 'fatal') return <Center>{t.authFail}</Center>;
@@ -21,7 +93,7 @@ export function App() {
 
   return (
     <div className="app">
-      <RulesButton turnSeconds={snap.settings.turnSeconds} />
+      <RulesButton turnSeconds={snap.settings.turnSeconds} web={web} />
       <MuteButton />
       {status === 'reconnecting' && <div className="banner">{t.reconnecting}</div>}
       {toast && (
@@ -30,7 +102,7 @@ export function App() {
         </div>
       )}
 
-      {snap.phase === 'lobby' && <Lobby snap={snap} you={you} send={send} />}
+      {snap.phase === 'lobby' && <Lobby snap={snap} you={you} send={send} web={web} />}
 
       {(snap.phase === 'picking' || snap.phase === 'typing') && (
         <>
@@ -51,8 +123,20 @@ export function App() {
 
 // ---------------- lobby ----------------
 
-function Lobby({ snap, you, send }: { snap: Snapshot; you: string; send: Send }) {
+function Lobby({ snap, you, send, web }: { snap: Snapshot; you: string; send: Send; web: boolean }) {
   const enough = snap.members.length >= 2;
+  const [copied, setCopied] = useState(false);
+  const invite = async () => {
+    const url = `${location.origin}/r/${roomFromUrl() ?? ''}`;
+    try {
+      if (navigator.share && matchMedia('(pointer: coarse)').matches) await navigator.share({ url, title: 'Last Letter' });
+      else await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      /* share sheet dismissed */
+    }
+  };
   return (
     <div className="screen lobby">
       <Logo />
@@ -68,6 +152,12 @@ function Lobby({ snap, you, send }: { snap: Snapshot; you: string; send: Send })
           </div>
         ))}
       </div>
+
+      {web && (
+        <button className="invite" onClick={invite}>
+          {copied ? t.copied : t.invite}
+        </button>
+      )}
 
       <div className="setting">
         <span>{t.turnTime}</span>
@@ -410,7 +500,7 @@ function Avatar({ p, size }: { p: PlayerInfo; size: number }) {
   );
 }
 
-function RulesButton({ turnSeconds }: { turnSeconds: number }) {
+function RulesButton({ turnSeconds, web = false }: { turnSeconds: number; web?: boolean }) {
   const [open, setOpen] = useState(false);
   useEffect(() => {
     if (!open) return;
@@ -434,7 +524,7 @@ function RulesButton({ turnSeconds }: { turnSeconds: number }) {
             </button>
             <h2>{t.rulesTitle}</h2>
             <ol>
-              {t.rules(turnSeconds).map((r, i) => (
+              {t.rules(turnSeconds, !web).map((r, i) => (
                 <li key={i}>{r}</li>
               ))}
             </ol>
