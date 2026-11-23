@@ -535,6 +535,15 @@ function RulesButton({ turnSeconds, web = false }: { turnSeconds: number; web?: 
                 <li key={i}>{r}</li>
               ))}
             </ol>
+            <p className="legal">
+              <a href="/terms.html" target="_blank" rel="noreferrer">
+                {t.terms}
+              </a>
+              {' · '}
+              <a href="/privacy.html" target="_blank" rel="noreferrer">
+                {t.privacy}
+              </a>
+            </p>
           </div>
         </div>
       )}
