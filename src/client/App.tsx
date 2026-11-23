@@ -106,6 +106,7 @@ function Game({ identify, web }: { identify: () => Identity | Promise<Identity>;
 
       {(snap.phase === 'picking' || snap.phase === 'typing') && (
         <>
+          {(snap.players.find((p) => p.id === you)?.hp ?? 0) > 0 && <SurrenderButton send={send} />}
           <PlayersBar players={snap.players} turnId={snap.turnId} you={you} />
           <TimerBar snap={snap} serverNow={serverNow} mine={snap.turnId === you} />
           {snap.phase === 'picking' ? (
@@ -362,8 +363,8 @@ function WordView({ text, letter, used }: { text: string; letter: string; used: 
 function WordInput({ snap, send, reject }: { snap: Snapshot; send: Send; reject: Reject | null }) {
   const [value, setValue] = useState('');
   const [error, setError] = useState<WordError | 'not_your_turn' | 'slow_down' | null>(null);
-  const [shake, setShake] = useState(0);
   const input = useRef<HTMLInputElement>(null);
+  const box = useRef<HTMLDivElement>(null);
   const lastSent = useRef(0);
   const mountedAt = useRef(Date.now());
   const letter = snap.letter!;
@@ -376,11 +377,22 @@ function WordInput({ snap, send, reject }: { snap: Snapshot; send: Send; reject:
     return () => window.removeEventListener('pointerup', refocus);
   }, []);
 
+  /** Shake the box and keep typing — the input itself is never re-created, so focus stays. */
+  const fail = (err: NonNullable<typeof error>) => {
+    setError(err);
+    sfx.error();
+    const el = box.current;
+    if (el) {
+      el.classList.remove('shake');
+      void el.offsetWidth; // restart the CSS animation
+      el.classList.add('shake');
+    }
+    input.current?.focus();
+  };
+
   useEffect(() => {
     if (!reject || reject.at < mountedAt.current) return;
-    setError(reject.error);
-    setShake((s) => s + 1);
-    sfx.error();
+    fail(reject.error);
   }, [reject]);
 
   const onChange = (raw: string) => {
@@ -398,19 +410,14 @@ function WordInput({ snap, send, reject }: { snap: Snapshot; send: Send; reject:
 
   const submit = () => {
     const err = quickCheck(value, letter, (w) => snap.used.includes(w));
-    if (err) {
-      setError(err);
-      setShake((s) => s + 1);
-      sfx.error();
-      return;
-    }
+    if (err) return fail(err);
     send({ t: 'word', text: value });
   };
 
   const shown = error;
   return (
     <>
-      <div className="word-box" key={shake} data-shake={shake > 0}>
+      <div className="word-box" ref={box}>
         <div className={snap.used.includes(value) ? 'word-mirror used' : 'word-mirror'} style={wordFontSize(value.length)} aria-hidden>
           {value ? (
             <>
@@ -535,6 +542,26 @@ function RulesButton({ turnSeconds, web = false }: { turnSeconds: number; web?: 
   );
 }
 
+/** Two taps: the first arms it for 3 s, the second gives up. No accidental surrenders. */
+function SurrenderButton({ send }: { send: Send }) {
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    if (!armed) return;
+    const id = setTimeout(() => setArmed(false), 3000);
+    return () => clearTimeout(id);
+  }, [armed]);
+  return (
+    <button
+      className={armed ? 'surrender armed' : 'surrender'}
+      title={t.surrender}
+      aria-label={armed ? t.surrenderConfirm : t.surrender}
+      onClick={() => (armed ? send({ t: 'surrender' }) : setArmed(true))}
+    >
+      {armed ? t.surrenderConfirm : '🏳'}
+    </button>
+  );
+}
+
 function MuteButton() {
   const [m, setM] = useState(isMuted());
   return (
@@ -586,7 +613,8 @@ function useEventToasts(snap: Snapshot | null, you: string | null) {
       if (e.kind === 'timeout') {
         text = t.evTimeout(name(e.by));
         sfx.hurt();
-      } else if (e.kind === 'out') text = e.reason === 'left' ? t.evLeft(name(e.by)) : t.evOut(name(e.by));
+      } else if (e.kind === 'out')
+        text = e.reason === 'left' ? t.evLeft(name(e.by)) : e.reason === 'surrender' ? t.evSurrender(name(e.by)) : t.evOut(name(e.by));
       else if (e.kind === 'picked' && e.auto) text = t.evAuto(e.letter.toUpperCase());
       else if (e.kind === 'win') sfx.win();
       if (text) setToast({ text, key: seq });

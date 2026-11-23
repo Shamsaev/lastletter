@@ -316,3 +316,49 @@ describe('rounds', () => {
     expect(g.round).toBe(r1 + 1);
   });
 });
+
+describe('surrender', () => {
+  it('on your own turn: out immediately, next player picks a new letter', () => {
+    const g = setup([A, B, C]);
+    g.pick('a', 'a', 0); // b's turn
+    expect(g.surrender('b', 5)).toBe(true);
+    expect(g.player('b')!.hp).toBe(0);
+    expect(g.player('b')!.place).toBe(3);
+    expect(g.phase).toBe('picking');
+    expect(g.turnId).toBe('c');
+    expect(g.snapshot(5).events.at(-1)!.e).toEqual({ kind: 'out', by: 'b', reason: 'surrender' });
+  });
+
+  it('not on your turn: the round goes on, you are skipped', () => {
+    const g = setup([A, B, C]);
+    g.pick('a', 'a', 0); // b's turn
+    expect(g.surrender('c', 1)).toBe(true);
+    expect(g.phase).toBe('typing');
+    expect(g.turnId).toBe('b');
+    g.submit('b', 'apple', 2);
+    expect(g.turnId).toBe('a'); // c skipped
+  });
+
+  it('in a 2-player game the other player wins; result counts the surrenderer', () => {
+    const g = setup();
+    g.pick('a', 'a', 0);
+    g.surrender('a', 1);
+    expect(g.phase).toBe('over');
+    expect(g.winnerId).toBe('b');
+    expect(g.result()!.players.map((p) => [p.id, p.place])).toEqual([
+      ['b', 1],
+      ['a', 2],
+    ]);
+  });
+
+  it('cannot surrender twice, outside a game, or as a spectator', () => {
+    const g = setup([A, B, C]);
+    g.join({ id: 'd', name: 'Dan', avatar: null });
+    expect(g.surrender('d', 0)).toBe(false);
+    expect(g.surrender('a', 0)).toBe(true);
+    expect(g.surrender('a', 0)).toBe(false);
+    const lobby = new Game(isWord);
+    lobby.join(A);
+    expect(lobby.surrender('a', 0)).toBe(false);
+  });
+});

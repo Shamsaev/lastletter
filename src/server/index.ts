@@ -304,6 +304,9 @@ wss.on('connection', (ws) => {
       case 'lobby':
         changed = game.toLobby(me);
         break;
+      case 'surrender':
+        changed = game.surrender(me, now);
+        break;
       case 'pick':
         changed = game.pick(me, String(msg.letter ?? ''), now);
         break;

@@ -16,7 +16,8 @@ export type ClientMsg =
   | { t: 'pick'; letter: string }
   | { t: 'word'; text: string }
   | { t: 'typing'; text: string }
-  | { t: 'lobby' };
+  | { t: 'lobby' }
+  | { t: 'surrender' };
 
 export type ServerMsg =
   | { t: 'welcome'; you: string }

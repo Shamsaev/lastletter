@@ -198,4 +198,18 @@ describe('server', () => {
     expect(posted()).toHaveLength(1);
     a.ws.close();
   }, 15_000);
+
+  it('surrender over the socket ends a 2-player game at once', async () => {
+    const room = 'r' + Math.random();
+    const a = new Client('a', room);
+    const b = new Client('b', room);
+    await a.until((c) => c.state?.members.length === 2);
+    a.send({ t: 'start' });
+    await a.until((c) => c.state?.phase === 'picking');
+    b.send({ t: 'surrender' });
+    await a.until((c) => c.state?.phase === 'over');
+    expect(a.state!.winnerId).toBe(a.me);
+    a.ws.close();
+    b.ws.close();
+  });
 });
