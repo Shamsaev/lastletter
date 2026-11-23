@@ -1,5 +1,7 @@
 const ru = {
   rulesTitle: 'Правила',
+  terms: 'Условия использования',
+  privacy: 'Конфиденциальность',
   rules: (sec: number, discord: boolean) => [
     'Играют от 2 человек, ходы идут по кругу.',
     'Первый в круге выбирает букву, следующий пишет английское слово на эту букву.',
@@ -57,6 +59,8 @@ type Dict = typeof ru;
 
 const en: Dict = {
   rulesTitle: 'Rules',
+  terms: 'Terms of Service',
+  privacy: 'Privacy Policy',
   rules: (sec, discord) => [
     '2 or more players, turns go around the circle.',
     'The first player of a round picks a letter; the next one writes an English word starting with it.',
