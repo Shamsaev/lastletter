@@ -15,8 +15,7 @@ RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/dist ./dist
 COPY src ./src
 RUN mkdir -p data && chown node:node data
-VOLUME /app/data
 EXPOSE 3000
-HEALTHCHECK --interval=30s --timeout=3s CMD wget -qO- http://localhost:3000/api/health || exit 1
+HEALTHCHECK --interval=30s --timeout=3s CMD wget -qO- "http://localhost:$PORT/api/health" || exit 1
 USER node
 CMD ["node", "--import", "tsx", "src/server/index.ts"]
