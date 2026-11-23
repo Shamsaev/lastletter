@@ -5,7 +5,7 @@ import type { ClientMsg, ServerMsg } from '../shared/protocol';
 
 export const IN_DISCORD = new URLSearchParams(location.search).has('frame_id');
 
-interface Identity {
+export interface Identity {
   room: string;
   channelId?: string;
   guildId?: string;
@@ -13,49 +13,82 @@ interface Identity {
   guest?: { id: string; name: string };
 }
 
-async function identify(): Promise<Identity> {
-  if (IN_DISCORD) {
-    // Client ID comes from the server at runtime, so one build works for any app.
-    const { clientId } = (await (await fetch('/api/config')).json()) as { clientId: string };
-    const sdk = new DiscordSDK(clientId);
-    await sdk.ready();
-    const { code } = await sdk.commands.authorize({
-      client_id: clientId,
-      response_type: 'code',
-      state: '',
-      prompt: 'none',
-      scope: ['identify'],
-    });
-    const res = await fetch('/api/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code }),
-    });
-    const { access_token } = (await res.json()) as { access_token?: string };
-    if (!access_token) throw new Error('token');
-    await sdk.commands.authenticate({ access_token });
-    return {
-      room: sdk.instanceId,
-      accessToken: access_token,
-      channelId: sdk.channelId ?? undefined,
-      guildId: sdk.guildId ?? undefined,
-    };
-  }
-
-  // Browser mode for local testing: every tab is a separate player.
-  // ?room=abc&name=Alice — sessionStorage keeps the same id across reloads of one tab.
-  const q = new URLSearchParams(location.search);
-  let id = sessionStorage.getItem('ll-guest-id');
-  if (!id) {
-    id = Math.random().toString(36).slice(2, 10);
-    sessionStorage.setItem('ll-guest-id', id);
-  }
+/** Inside Discord: OAuth via the Embedded App SDK, room = Activity instance. */
+export async function discordIdentity(): Promise<Identity> {
+  // Client ID comes from the server at runtime, so one build works for any app.
+  const { clientId } = (await (await fetch('/api/config')).json()) as { clientId: string };
+  const sdk = new DiscordSDK(clientId);
+  await sdk.ready();
+  const { code } = await sdk.commands.authorize({
+    client_id: clientId,
+    response_type: 'code',
+    state: '',
+    prompt: 'none',
+    scope: ['identify'],
+  });
+  const res = await fetch('/api/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code }),
+  });
+  const { access_token } = (await res.json()) as { access_token?: string };
+  if (!access_token) throw new Error('token');
+  await sdk.commands.authenticate({ access_token });
   return {
-    room: q.get('room') ?? 'local',
-    channelId: q.get('channel') ?? undefined,
-    guildId: q.get('guild') ?? undefined,
-    guest: { id, name: q.get('name') ?? `Guest-${id.slice(0, 4)}` },
+    room: sdk.instanceId,
+    accessToken: access_token,
+    channelId: sdk.channelId ?? undefined,
+    guildId: sdk.guildId ?? undefined,
   };
+}
+
+// ---------------- website mode ----------------
+
+const memory = new Map<string, string>();
+function store(kind: 'local' | 'session') {
+  try {
+    const s = kind === 'local' ? localStorage : sessionStorage;
+    s.setItem('ll-probe', '1');
+    return s;
+  } catch {
+    return { getItem: (k: string) => memory.get(k) ?? null, setItem: (k: string, v: string) => void memory.set(k, v) };
+  }
+}
+
+/** Dev override: ?name=Alice gives every tab its own player (sessionStorage id). */
+const DEV_NAME = new URLSearchParams(location.search).get('name');
+
+export function savedName(): string {
+  return DEV_NAME ?? store('local').getItem('ll-name') ?? '';
+}
+export function saveName(name: string) {
+  store('local').setItem('ll-name', name);
+}
+
+function playerId(): string {
+  const s = store(DEV_NAME ? 'session' : 'local');
+  let id = s.getItem('ll-id');
+  if (!id) {
+    id = Math.random().toString(36).slice(2, 12);
+    s.setItem('ll-id', id);
+  }
+  return id;
+}
+
+const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+export function newRoomCode(): string {
+  return Array.from({ length: 5 }, () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join('');
+}
+
+/** /r/ABCDE → "ABCDE" (also ?room= for tests). */
+export function roomFromUrl(): string | null {
+  const m = /^\/r\/([A-Za-z0-9]{4,8})\/?$/.exec(location.pathname);
+  const code = m?.[1] ?? new URLSearchParams(location.search).get('room');
+  return code ? code.toUpperCase() : null;
+}
+
+export function webIdentity(room: string, name: string): Identity {
+  return { room, guest: { id: playerId(), name } };
 }
 
 export type Status = 'connecting' | 'online' | 'reconnecting' | 'fatal';
@@ -66,7 +99,7 @@ export interface Reject {
   at: number;
 }
 
-export function useGame() {
+export function useGame(identify: () => Identity | Promise<Identity>) {
   const [status, setStatus] = useState<Status>('connecting');
   const [you, setYou] = useState<string | null>(null);
   const [snap, setSnap] = useState<Snapshot | null>(null);
@@ -118,7 +151,8 @@ export function useGame() {
       };
     };
 
-    identify()
+    Promise.resolve()
+      .then(identify)
       .then((id) => {
         identity = id;
         connect();

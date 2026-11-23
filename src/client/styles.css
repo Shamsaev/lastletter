@@ -179,6 +179,42 @@ input:focus-visible {
 }
 
 
+.home {
+  gap: 22px;
+}
+.name-input {
+  width: 100%;
+  max-width: 320px;
+  padding: 14px 18px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 18px;
+  text-align: center;
+  user-select: text;
+}
+.name-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.name-input::placeholder {
+  color: var(--muted);
+}
+.invite {
+  padding: 8px 18px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  min-width: 190px;
+}
+.invite:hover {
+  border-color: var(--accent);
+}
+
 /* ---------- players bar ---------- */
 
 .players {

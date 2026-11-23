@@ -33,12 +33,19 @@ const browser = await chromium.launch({ executablePath: '/usr/bin/google-chrome'
 const errors: string[] = [];
 
 async function open(name: string, lang: string, viewport = { width: 900, height: 640 }) {
-  const ctx = await browser.newContext({ viewport, deviceScaleFactor: 2 });
+  const ctx = await browser.newContext({ viewport, deviceScaleFactor: 2, locale: lang === 'ru' ? 'ru-RU' : 'en-US' });
+  await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: BASE });
   const page = await ctx.newPage();
   page.on('pageerror', (e) => errors.push(`${name}: ${e.message}`));
   page.on('console', (m) => m.type() === 'error' && errors.push(`${name}: ${m.text()}`));
-  await page.goto(`${BASE}/?room=e2e&name=${name}&lang=${lang}`);
   return { name, page };
+}
+
+/** Website flow: type a name on the home/join screen and press the button. */
+async function enter(p: { name: string; page: Page }, url: string, button: string) {
+  await p.page.goto(url);
+  await p.page.locator('.name-input').fill(p.name);
+  await p.page.getByRole('button', { name: button }).click();
 }
 
 let ok = false;
@@ -47,6 +54,25 @@ try {
   const bob = await open('Bob', 'ru', { width: 390, height: 720 }); // phone-sized
   const cid = await open('Cid', 'en');
   const all = [alice, bob, cid];
+
+  // Alice creates a room from the home page and copies the invite link
+  await alice.page.goto(BASE + '/');
+  await alice.page.screenshot({ path: `${SHOTS}/00-home.png` });
+  await enter(alice, BASE + '/', 'Создать комнату');
+  await alice.page.waitForURL(/\/r\/[A-Z0-9]{5}$/);
+  await alice.page.getByRole('button', { name: 'Скопировать ссылку' }).click();
+  await alice.page.getByRole('button', { name: 'Ссылка скопирована' }).waitFor();
+  const link = await alice.page.evaluate(() => navigator.clipboard.readText());
+  if (link !== alice.page.url()) throw new Error(`invite link ${link} != ${alice.page.url()}`);
+  log('room link:', link);
+
+  // friends open the link and type their names
+  await enter(bob, link, 'Войти');
+  await enter(cid, link, 'Join');
+
+  // a reload keeps the same seat (id in localStorage)
+  await cid.page.waitForSelector('.member');
+  await cid.page.reload();
 
   await alice.page.waitForFunction(() => document.querySelectorAll('.member').length === 3);
   await alice.page.screenshot({ path: `${SHOTS}/01-lobby.png` });
