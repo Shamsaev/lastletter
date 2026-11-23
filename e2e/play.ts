@@ -116,15 +116,19 @@ try {
   await writer.page.screenshot({ path: `${SHOTS}/03-rejected.png` });
   await watcher.page.screenshot({ path: `${SHOTS}/04-watching-draft.png` });
 
-  await writer.page.locator('.word-input').fill('');
-  await writer.page.keyboard.type('ca');
-  // wrong-letter live hint
-  await writer.page.locator('.word-input').fill('bat');
+  // After a rejected word the input keeps focus: keep typing without clicking.
+  const focused = () => writer.page.evaluate(() => document.activeElement?.classList.contains('word-input'));
+  if (!(await focused())) throw new Error('input lost focus after server reject');
+  for (let i = 0; i < 5; i++) await writer.page.keyboard.press('Backspace');
+  await writer.page.keyboard.type('bat');
   if (await writer.page.locator('.hint.error').count()) throw new Error('no live hints while typing');
-  await writer.page.keyboard.press('Enter');
+  await writer.page.keyboard.press('Enter'); // wrong letter → client-side reject
   await writer.page.waitForSelector('.hint.error');
-  await writer.page.locator('.word-input').fill('');
+  if (!(await focused())) throw new Error('input lost focus after client reject');
+  for (let i = 0; i < 3; i++) await writer.page.keyboard.press('Backspace');
   await writer.page.keyboard.type('cat');
+  if ((await writer.page.locator('.word-input').inputValue()) !== 'cat') throw new Error('typing after reject failed');
+  log('focus kept after rejects');
   await writer.page.keyboard.press('Enter');
   submitted.add('cat');
   await writer.page.waitForSelector('.word-input', { state: 'detached' });
@@ -167,6 +171,12 @@ try {
     if (loser === 'Cid' && (await alice.page.locator('.chip.out').count()) === 1) {
       log('Cid eliminated');
       loser = 'Bob';
+      // Bob gives up with the flag button: first tap arms, second confirms
+      await bob.page.locator('.surrender').click();
+      await bob.page.locator('.surrender.armed').waitFor();
+      await bob.page.screenshot({ path: `${SHOTS}/08b-surrender.png` });
+      await bob.page.locator('.surrender.armed').click();
+      log('Bob surrendered');
     }
     await new Promise((r) => setTimeout(r, 120));
   }

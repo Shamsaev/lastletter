@@ -37,7 +37,7 @@ export type GameEvent =
   | { kind: 'start' }
   | { kind: 'picked'; by: string; letter: string; auto: boolean }
   | { kind: 'timeout'; by: string; hp: number }
-  | { kind: 'out'; by: string; reason: 'hp' | 'left' }
+  | { kind: 'out'; by: string; reason: 'hp' | 'left' | 'surrender' }
   | { kind: 'win'; by: string | null };
 
 export interface Settings {
@@ -189,6 +189,22 @@ export class Game {
     return { ok: true };
   }
 
+  /**
+   * Give up right away: out of this game, stays in the room as a spectator.
+   * If it was their turn, the next player starts a new round by picking a letter.
+   */
+  surrender(byId: string, now: number): boolean {
+    if (!this.inGame()) return false;
+    const p = this.player(byId);
+    if (!p || p.hp <= 0) return false;
+    const hadTurn = this.turnId === byId;
+    this.disconnectedAt.delete(byId);
+    this.eliminate(p, 'surrender');
+    if (this.checkWin()) return true;
+    if (hadTurn) this.beginPicking(this.nextAlive(byId)!, now);
+    return true;
+  }
+
   /** Advances time: reconnect grace, pick timeouts, turn timeouts. Returns true if state changed. */
   tick(now: number, rng: Rng = Math.random): boolean {
     if (!this.inGame()) return false;
@@ -306,7 +322,7 @@ export class Game {
     this.deadline = now + this.turnMs;
   }
 
-  private eliminate(p: Player, reason: 'hp' | 'left'): void {
+  private eliminate(p: Player, reason: 'hp' | 'left' | 'surrender'): void {
     p.hp = 0;
     p.place = this.alive().length + 1;
     this.emit({ kind: 'out', by: p.id, reason });

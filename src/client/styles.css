@@ -224,7 +224,8 @@ input:focus-visible {
   justify-content: center;
   gap: 10px;
   overflow-x: auto;
-  padding: 8px 40px 2px;
+  padding: 8px 12px 2px;
+  margin-top: 40px; /* corner buttons (!, 🏳, 🔊) get their own row */
   scrollbar-width: none;
 }
 .chip {
@@ -386,7 +387,7 @@ input:focus-visible {
 .word-box:focus-within {
   border-bottom-color: var(--accent);
 }
-.word-box[data-shake='true'] {
+.word-box.shake {
   animation: shake 0.32s;
 }
 .word-mirror,
@@ -534,6 +535,30 @@ input:focus-visible {
   display: flex;
   gap: 8px;
   align-items: center;
+}
+
+.surrender {
+  position: absolute;
+  top: 10px;
+  right: 52px;
+  height: 36px;
+  min-width: 36px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 16px;
+  opacity: 0.5;
+  z-index: 5;
+  transition: opacity 0.15s, background 0.15s;
+}
+.surrender:hover {
+  opacity: 1;
+}
+.surrender.armed {
+  opacity: 1;
+  background: var(--bad);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 /* ---------- rules ---------- */
