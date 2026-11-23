@@ -212,4 +212,38 @@ describe('server', () => {
     a.ws.close();
     b.ws.close();
   });
+
+  it('russian mode end to end over the socket with the real noun dictionary', async () => {
+    const room = 'r' + Math.random();
+    const a = new Client('a', room);
+    const b = new Client('b', room);
+    await a.until((c) => c.state?.members.length === 2);
+    a.send({ t: 'settings', lang: 'ru' });
+    await b.until((c) => c.state?.settings.lang === 'ru');
+    a.send({ t: 'start' });
+    await a.until((c) => c.state?.phase === 'picking');
+    await b.until((c) => c.state?.phase === 'picking');
+    const picker = [a, b].find((c) => c.state!.turnId === c.me)!;
+    const writer = picker === a ? b : a;
+    picker.send({ t: 'pick', letter: 'л' });
+    await writer.until((c) => c.state?.letter === 'л' && c.state.turnId === writer.me);
+
+    writer.send({ t: 'typing', text: 'kjif' }); // English layout → "лоша"
+    await picker.until((c) => c.msgs.some((m) => m.t === 'typing' && m.text === 'лоша'));
+
+    writer.send({ t: 'word', text: 'лошади' }); // plural — not in the noun list
+    await writer.until((c) => c.msgs.some((m) => m.t === 'reject' && m.error === 'not_word'));
+    await new Promise((r) => setTimeout(r, 300));
+    writer.send({ t: 'word', text: 'Лошадь' });
+    await picker.until((c) => c.state?.turnId === picker.me && c.state.letter === 'д');
+    picker.send({ t: 'word', text: 'дерево' });
+    await writer.until((c) => c.state?.letter === 'о' && c.state.used.includes('дерево'));
+    a.ws.close();
+    b.ws.close();
+  });
+
+  it('health reports both dictionaries', async () => {
+    const j = await (await fetch(`http://localhost:${PORT}/api/health`)).json();
+    expect(j.wordsRu).toBeGreaterThan(45_000);
+  });
 });

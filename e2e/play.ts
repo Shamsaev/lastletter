@@ -76,7 +76,8 @@ try {
 
   await alice.page.waitForFunction(() => document.querySelectorAll('.member').length === 3);
   await alice.page.screenshot({ path: `${SHOTS}/01-lobby.png` });
-  if ((await alice.page.locator('.segmented .on').textContent()) !== '15с') throw new Error('default must be 15s');
+  if ((await alice.page.getByRole('radio', { name: '15с' }).getAttribute('aria-checked')) !== 'true') throw new Error('default must be 15s');
+  if ((await alice.page.getByRole('radio', { name: 'English' }).getAttribute('aria-checked')) !== 'true') throw new Error('default words must be English');
   if (await alice.page.locator('.hint, .footnote, .tagline').count()) throw new Error('lobby must have no hints');
   log('lobby ok');
 
@@ -89,7 +90,7 @@ try {
   log('rules modal ok');
 
   await alice.page.getByRole('radio', { name: '20с' }).click();
-  await cid.page.waitForFunction(() => document.querySelector('.segmented .on')?.textContent === '20s');
+  await cid.page.getByRole('radio', { name: '20s', checked: true }).waitFor();
   await alice.page.getByRole('button', { name: 'Начать' }).click();
 
   const whoHas = async (sel: string) => {
@@ -194,6 +195,38 @@ try {
   const hp = await alice.page.locator('.heart:not(.lost)').count();
   if (hp !== 9) throw new Error('fresh game should give 3×3 hearts, got ' + hp);
   log('play again ok');
+
+  // --- Russian mode: everyone else gives up, back to the lobby, switch the words to Russian
+  for (const p of [bob, cid]) {
+    await p.page.locator('.surrender').click();
+    await p.page.locator('.surrender.armed').click();
+  }
+  await alice.page.waitForSelector('.results');
+  await alice.page.getByRole('button', { name: 'Лобби' }).click();
+  await alice.page.getByRole('radio', { name: 'Русские' }).click();
+  await cid.page.getByRole('radio', { name: 'Russian', checked: true }).waitFor(); // everyone sees it
+  await alice.page.screenshot({ path: `${SHOTS}/11-lobby-ru.png` });
+  await alice.page.getByRole('button', { name: 'Начать' }).click();
+
+  const ruPicker = await whoHas('.letters');
+  if ((await ruPicker.page.locator('.letters button').count()) !== 28) throw new Error('Russian grid should have 28 letters');
+  await ruPicker.page.screenshot({ path: `${SHOTS}/12-pick-ru.png` });
+  await ruPicker.page.keyboard.press('KeyL'); // physical L = Д on ЙЦУКЕН
+  const ruWriter = await whoHas('.word-input');
+  await ruWriter.page.waitForFunction(() => document.querySelector('.letter-chip')?.textContent === 'Д');
+  await ruWriter.page.keyboard.type('ljv'); // typed on the English layout → "дом"
+  await ruWriter.page.waitForFunction(() => document.querySelector('.word-mirror')?.textContent === 'дом');
+  await ruWriter.page.keyboard.press('Enter');
+  await ruWriter.page.waitForSelector('.word-input', { state: 'detached' });
+  const ruNext = await whoHas('.word-input');
+  await ruNext.page.waitForFunction(() => document.querySelector('.letter-chip')?.textContent === 'М');
+  await ruNext.page.keyboard.type('мышь');
+  await ruNext.page.keyboard.press('Enter');
+  await ruNext.page.waitForSelector('.word-input', { state: 'detached' });
+  const ruThird = await whoHas('.word-input');
+  await ruThird.page.waitForFunction(() => document.querySelector('.letter-chip')?.textContent === 'Ш'); // ь skipped
+  await ruThird.page.screenshot({ path: `${SHOTS}/13-chain-ru.png` });
+  log('russian mode ok');
 
   if (errors.length) throw new Error('browser errors:\n' + errors.join('\n'));
   ok = true;

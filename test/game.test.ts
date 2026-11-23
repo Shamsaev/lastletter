@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Game, MAX_HP, PICK_MS, RECONNECT_GRACE_MS } from '../src/shared/game';
-import { normalizeInput, quickCheck } from '../src/shared/text';
+import { PICKABLE, chainLetter, letterFromKeyCode, normalizeInput, quickCheck } from '../src/shared/text';
 
 const WORDS = new Set([
   'apple', 'egg', 'eagle', 'gate', 'elephant', 'tiger', 'rabbit', 'table', 'echo', 'orange', 'tree',
@@ -360,5 +360,101 @@ describe('surrender', () => {
     const lobby = new Game(isWord);
     lobby.join(A);
     expect(lobby.surrender('a', 0)).toBe(false);
+  });
+});
+
+describe('russian mode — text', () => {
+  it('normalizes Russian, ё → е, fixes a forgotten English layout', () => {
+    expect(normalizeInput('  Кот! ', 'ru')).toBe('кот');
+    expect(normalizeInput('Ёжик', 'ru')).toBe('ежик');
+    expect(normalizeInput('ghbdtn', 'ru')).toBe('привет');
+    expect(normalizeInput('[kt,', 'ru')).toBe('хлеб'); // punctuation keys hold х ж э б ю
+    expect(normalizeInput('apple', 'en')).toBe('apple'); // English mode untouched
+  });
+
+  it('Ь Ъ Ы Й at the end pass on the previous letter', () => {
+    expect(chainLetter('кот', 'ru')).toBe('т');
+    expect(chainLetter('лошадь', 'ru')).toBe('д');
+    expect(chainLetter('чай', 'ru')).toBe('а');
+    expect(chainLetter('сыры', 'ru')).toBe('р');
+    expect(chainLetter('obey', 'en')).toBe('y'); // only Russian skips
+  });
+
+  it('pickable letters skip ъ ы ь й and ё', () => {
+    expect(PICKABLE.ru).toHaveLength(28);
+    for (const l of ['ъ', 'ы', 'ь', 'й', 'ё']) expect(PICKABLE.ru).not.toContain(l);
+  });
+
+  it('physical keys map to the right alphabet', () => {
+    expect(letterFromKeyCode('KeyR', 'ru')).toBe('к');
+    expect(letterFromKeyCode('BracketLeft', 'ru')).toBe('х');
+    expect(letterFromKeyCode('KeyM', 'ru')).toBeNull(); // ь — not pickable
+    expect(letterFromKeyCode('KeyR', 'en')).toBe('r');
+    expect(letterFromKeyCode('Comma', 'en')).toBeNull();
+  });
+});
+
+describe('russian mode — game', () => {
+  const RU = new Set(['кот', 'тигр', 'рыба', 'лошадь', 'дом', 'чай', 'арбуз', 'ежик', 'капуста']);
+  const dict = (w: string, lang: string) => (lang === 'ru' ? RU.has(w) : WORDS.has(w));
+
+  function ru() {
+    const g = new Game(dict);
+    g.join(A);
+    g.join(B);
+    expect(g.setLang('a', 'ru')).toBe(true);
+    g.start('a', 0, noShuffle);
+    return g;
+  }
+
+  it('language is chosen in the lobby only', () => {
+    const g = new Game(dict);
+    g.join(A);
+    g.join(B);
+    expect(g.setLang('a', 'de')).toBe(false);
+    expect(g.settings.lang).toBe('en');
+    g.setLang('a', 'ru');
+    g.start('a', 0);
+    expect(g.setLang('a', 'en')).toBe(false);
+    expect(g.snapshot(0).settings.lang).toBe('ru');
+  });
+
+  it('a Latin key picks the Russian letter in the same place (z → я)', () => {
+    const g = ru();
+    expect(g.pick('a', 'z', 0)).toBe(true);
+    expect(g.phase).toBe('typing');
+    expect(g.letter).toBe('я');
+  });
+
+  it('soft sign, й, ё, wrong language', () => {
+    const g = ru();
+    expect(g.pick('a', 'ь', 0)).toBe(false);
+    expect(g.pick('a', 'л', 0)).toBe(true);
+    expect(g.submit('b', 'apple', 1)).toEqual({ ok: false, error: 'wrong_letter' }); // "apple" → "фззду" on ru layout
+    expect(g.submit('b', 'лошадь', 1)).toEqual({ ok: true });
+    expect(g.letter).toBe('д');
+    expect(g.submit('a', 'дом', 2)).toEqual({ ok: true });
+    g.used.add('мак');
+    g.letter = 'ч';
+    g.turnId = 'b';
+    expect(g.submit('b', 'чай', 3)).toEqual({ ok: true });
+    expect(g.letter).toBe('а'); // й skipped
+    expect(g.submit('a', 'арбуз', 4)).toEqual({ ok: true });
+    g.letter = 'е';
+    expect(g.submit('b', 'ёжик', 5)).toEqual({ ok: true }); // ё typed, stored as е
+    expect(g.used.has('ежик')).toBe(true);
+  });
+
+  it('English words are not Russian words', () => {
+    const g = ru();
+    g.pick('a', 'к', 0);
+    expect(g.submit('b', 'капут', 1)).toEqual({ ok: false, error: 'not_word' });
+    expect(g.submit('b', 'кот', 1)).toEqual({ ok: true });
+  });
+
+  it('auto-picked letter is Russian', () => {
+    const g = ru();
+    g.tick(PICK_MS);
+    expect(g.letter).toMatch(/^[а-я]$/);
   });
 });
