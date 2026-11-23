@@ -4,7 +4,7 @@ import { extname, join, normalize, resolve } from 'node:path';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { Game, type PlayerInfo } from '../shared/game.js';
 import type { ClientMsg, ServerMsg } from '../shared/protocol.js';
-import { normalizeInput, MAX_WORD } from '../shared/text.js';
+import { normalizeInput, MAX_WORD, type Lang } from '../shared/text.js';
 import { loadDictionary } from './dictionary.js';
 import { Stats, type Location, type MessageBody } from './stats.js';
 
@@ -23,8 +23,8 @@ const TICK_MS = 200;
 const EMPTY_ROOM_TTL_MS = 60_000;
 const WORD_COOLDOWN_MS = 250;
 
-const dictionary = loadDictionary();
-const isWord = (w: string) => dictionary.has(w);
+const dictionaries: Record<Lang, Set<string>> = { en: loadDictionary('en'), ru: loadDictionary('ru') };
+const isWord = (w: string, lang: Lang) => dictionaries[lang].has(w);
 
 async function postToChannel(channelId: string, body: MessageBody) {
   if (!BOT_TOKEN) return;
@@ -216,7 +216,7 @@ async function handleHttp(req: IncomingMessage, res: ServerResponse) {
 
   if (url.pathname === '/api/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, rooms: rooms.size, words: dictionary.size }));
+    res.end(JSON.stringify({ ok: true, rooms: rooms.size, words: dictionaries.en.size, wordsRu: dictionaries.ru.size }));
     return;
   }
 
@@ -299,7 +299,8 @@ wss.on('connection', (ws) => {
         changed = game.start(me, now);
         break;
       case 'settings':
-        changed = game.setTurnSeconds(me, Number(msg.turnSeconds));
+        if (msg.turnSeconds !== undefined) changed = game.setTurnSeconds(me, Number(msg.turnSeconds)) || changed;
+        if (msg.lang !== undefined) changed = game.setLang(me, String(msg.lang)) || changed;
         break;
       case 'lobby':
         changed = game.toLobby(me);
@@ -313,18 +314,18 @@ wss.on('connection', (ws) => {
       case 'word': {
         const text = String(msg.text ?? '').slice(0, 64);
         if (now - conn.lastWordAt < WORD_COOLDOWN_MS) {
-          send(ws, { t: 'reject', error: 'slow_down', word: normalizeInput(text) });
+          send(ws, { t: 'reject', error: 'slow_down', word: normalizeInput(text, game.settings.lang) });
           break;
         }
         conn.lastWordAt = now;
         const r = game.submit(me, text, now);
         if (r.ok) changed = true;
-        else send(ws, { t: 'reject', error: r.error, word: normalizeInput(text) });
+        else send(ws, { t: 'reject', error: r.error, word: normalizeInput(text, game.settings.lang) });
         break;
       }
       case 'typing': {
         if (game.phase !== 'typing' || game.turnId !== me) break;
-        const text = normalizeInput(String(msg.text ?? '')).slice(0, MAX_WORD);
+        const text = normalizeInput(String(msg.text ?? ''), game.settings.lang).slice(0, MAX_WORD);
         const out = JSON.stringify({ t: 'typing', by: me, text } satisfies ServerMsg);
         for (const c of conn.room.conns) if (c.user.id !== me && c.ws.readyState === c.ws.OPEN) c.ws.send(out);
         break;
@@ -378,6 +379,6 @@ setInterval(() => {
 
 server.listen(PORT, () => {
   console.log(
-    `[last-letter] :${PORT}  words=${dictionary.size}  guests=${ALLOW_GUESTS ? 'on' : 'off'}  discord=${CLIENT_ID ? 'configured' : 'NOT configured'}  bot=${BOT_TOKEN ? 'on' : 'off'}`,
+    `[last-letter] :${PORT}  words=${dictionaries.en.size}+${dictionaries.ru.size}  guests=${ALLOW_GUESTS ? 'on' : 'off'}  discord=${CLIENT_ID ? 'configured' : 'NOT configured'}  bot=${BOT_TOKEN ? 'on' : 'off'}`,
   );
 });

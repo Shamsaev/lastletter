@@ -12,7 +12,7 @@ export type ClientMsg =
       guildId?: string;
     }
   | { t: 'start' }
-  | { t: 'settings'; turnSeconds: number }
+  | { t: 'settings'; turnSeconds?: number; lang?: string }
   | { t: 'pick'; letter: string }
   | { t: 'word'; text: string }
   | { t: 'typing'; text: string }

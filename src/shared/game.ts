@@ -1,7 +1,7 @@
 // Pure game logic: no timers, no sockets. Time (`now`) and randomness (`rng`) come from outside,
 // which keeps every rule unit-testable and the server a thin wrapper.
 
-import { EASY_LETTERS, LETTERS, normalizeInput, quickCheck, type WordError } from './text.js';
+import { EASY_LETTERS, LANGS, PICKABLE, chainLetter, normalizeInput, quickCheck, type Lang, type WordError } from './text.js';
 
 export const MAX_HP = 3;
 export const PICK_MS = 10_000;
@@ -42,6 +42,8 @@ export type GameEvent =
 
 export interface Settings {
   turnSeconds: TurnSeconds;
+  /** Language of the words: English (any word) or Russian (nouns). */
+  lang: Lang;
 }
 
 export interface Snapshot {
@@ -80,7 +82,7 @@ export interface GameResult {
 
 export class Game {
   phase: Phase = 'lobby';
-  settings: Settings = { turnSeconds: 15 };
+  settings: Settings = { turnSeconds: 15, lang: 'en' };
   members = new Map<string, PlayerInfo>();
   players: Player[] = [];
   turnId: string | null = null;
@@ -98,7 +100,7 @@ export class Game {
   private seq = 0;
 
   constructor(
-    private isWord: (w: string) => boolean,
+    private isWord: (w: string, lang: Lang) => boolean,
     public graceMs = RECONNECT_GRACE_MS,
   ) {}
 
@@ -138,6 +140,14 @@ export class Game {
     return true;
   }
 
+  /** Word language is chosen in the lobby (or on the results screen before playing again). */
+  setLang(byId: string, lang: string): boolean {
+    if (this.inGame() || !this.members.has(byId)) return false;
+    if (!(LANGS as readonly string[]).includes(lang)) return false;
+    this.settings.lang = lang as Lang;
+    return true;
+  }
+
   canStart(): boolean {
     return !this.inGame() && this.members.size >= 2;
   }
@@ -170,8 +180,8 @@ export class Game {
 
   pick(byId: string, letter: string, now: number): boolean {
     if (this.phase !== 'picking' || this.turnId !== byId) return false;
-    const l = normalizeInput(letter);
-    if (l.length !== 1) return false;
+    const l = normalizeInput(letter, this.settings.lang);
+    if (l.length !== 1 || !PICKABLE[this.settings.lang].includes(l)) return false;
     this.emit({ kind: 'picked', by: byId, letter: l, auto: false });
     this.beginTyping(l, this.nextAlive(byId)!, now);
     return true;
@@ -179,13 +189,14 @@ export class Game {
 
   submit(byId: string, raw: string, now: number): SubmitResult {
     if (this.phase !== 'typing' || this.turnId !== byId) return { ok: false, error: 'not_your_turn' };
-    const word = normalizeInput(raw);
-    const err = quickCheck(word, this.letter!, (w) => this.used.has(w)) ?? (this.isWord(word) ? null : 'not_word');
+    const { lang } = this.settings;
+    const word = normalizeInput(raw, lang);
+    const err = quickCheck(word, this.letter!, (w) => this.used.has(w)) ?? (this.isWord(word, lang) ? null : 'not_word');
     if (err) return { ok: false, error: err };
     this.used.add(word);
     this.chain.push({ word, by: byId, round: this.round });
     this.player(byId)!.words += 1;
-    this.beginTyping(word[word.length - 1], this.nextAlive(byId)!, now);
+    this.beginTyping(chainLetter(word, lang), this.nextAlive(byId)!, now);
     return { ok: true };
   }
 
@@ -227,7 +238,8 @@ export class Game {
       changed = true;
       const id = this.turnId!;
       if (this.phase === 'picking') {
-        const letter = EASY_LETTERS[Math.floor(rng() * EASY_LETTERS.length)];
+        const easy = EASY_LETTERS[this.settings.lang];
+        const letter = easy[Math.floor(rng() * easy.length)];
         this.emit({ kind: 'picked', by: id, letter, auto: true });
         this.beginTyping(letter, this.nextAlive(id)!, now);
       } else {
@@ -355,4 +367,3 @@ function shuffle<T>(arr: T[], rng: Rng): T[] {
   return arr;
 }
 
-export { LETTERS };

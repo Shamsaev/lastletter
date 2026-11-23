@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { MAX_HP, TURN_OPTIONS, type Player, type PlayerInfo, type Snapshot } from '../shared/game';
-import { LETTERS, normalizeInput, quickCheck, type WordError } from '../shared/text';
+import { LANGS, PICKABLE, chainLetterIndex, letterFromKeyCode, normalizeInput, quickCheck, type Lang, type WordError } from '../shared/text';
 import { t } from './i18n';
 import {
   IN_DISCORD,
@@ -93,7 +93,7 @@ function Game({ identify, web }: { identify: () => Identity | Promise<Identity>;
 
   return (
     <div className="app">
-      <RulesButton turnSeconds={snap.settings.turnSeconds} web={web} />
+      <RulesButton turnSeconds={snap.settings.turnSeconds} web={web} lang={snap.settings.lang} />
       <MuteButton />
       {status === 'reconnecting' && <div className="banner">{t.reconnecting}</div>}
       {toast && (
@@ -159,6 +159,23 @@ function Lobby({ snap, you, send, web }: { snap: Snapshot; you: string; send: Se
           {copied ? t.copied : t.invite}
         </button>
       )}
+
+      <div className="setting">
+        <span>{t.wordsLang}</span>
+        <div className="segmented" role="radiogroup">
+          {LANGS.map((l) => (
+            <button
+              key={l}
+              role="radio"
+              aria-checked={snap.settings.lang === l}
+              className={snap.settings.lang === l ? 'on' : ''}
+              onClick={() => send({ t: 'settings', lang: l })}
+            >
+              {t.langName[l]}
+            </button>
+          ))}
+        </div>
+      </div>
 
       <div className="setting">
         <span>{t.turnTime}</span>
@@ -265,12 +282,12 @@ function Picking({ snap, you, send, name }: { snap: Snapshot; you: string; send:
     if (!mine) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
-      const m = /^Key([A-Z])$/.exec(e.code); // physical key → works on any layout
-      if (m) send({ t: 'pick', letter: m[1].toLowerCase() });
+      const letter = letterFromKeyCode(e.code, snap.settings.lang); // physical key → works on any layout
+      if (letter) send({ t: 'pick', letter });
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [mine, send]);
+  }, [mine, send, snap.settings.lang]);
 
   if (!mine) {
     return (
@@ -284,7 +301,7 @@ function Picking({ snap, you, send, name }: { snap: Snapshot; you: string; send:
     <div className="screen board">
       <p className="status strong">{t.pickFor(name(snap.nextId))}</p>
       <div className="letters">
-        {LETTERS.map((l) => (
+        {PICKABLE[snap.settings.lang].map((l) => (
           <button key={l} onClick={() => send({ t: 'pick', letter: l })}>
             {l.toUpperCase()}
           </button>
@@ -309,7 +326,7 @@ function Typing(props: {
 
   return (
     <div className="screen board">
-      <Chain words={roundWords.map((c) => c.word)} />
+      <Chain words={roundWords.map((c) => c.word)} lang={snap.settings.lang} />
       <p className={mine ? 'status strong' : 'status'}>
         {mine ? t.yourTurn : t.turnOf(name(snap.turnId))} · {t.wordOn} <span className="letter-chip">{L}</span>
       </p>
@@ -325,16 +342,20 @@ function Typing(props: {
   );
 }
 
-function Chain({ words }: { words: string[] }) {
+function Chain({ words, lang }: { words: string[]; lang: Lang }) {
   if (!words.length) return <div className="chain" />;
   return (
     <div className="chain">
-      {words.map((w, i) => (
-        <span key={w} className={i === words.length - 1 ? 'chain-word last' : 'chain-word'}>
-          {w.slice(0, -1)}
-          <b>{w.slice(-1)}</b>
-        </span>
-      ))}
+      {words.map((w, i) => {
+        const k = chainLetterIndex(w, lang); // лошадь → Д: the skipped Ь stays plain
+        return (
+          <span key={w} className={i === words.length - 1 ? 'chain-word last' : 'chain-word'}>
+            {w.slice(0, k)}
+            <b>{w[k]}</b>
+            {w.slice(k + 1)}
+          </span>
+        );
+      })}
     </div>
   );
 }
@@ -396,7 +417,7 @@ function WordInput({ snap, send, reject }: { snap: Snapshot; send: Send; reject:
   }, [reject]);
 
   const onChange = (raw: string) => {
-    const v = normalizeInput(raw);
+    const v = normalizeInput(raw, snap.settings.lang);
     setValue(v);
     setError(null);
     const now = Date.now();
@@ -404,7 +425,7 @@ function WordInput({ snap, send, reject }: { snap: Snapshot; send: Send; reject:
       lastSent.current = now;
       send({ t: 'typing', text: v });
     } else {
-      setTimeout(() => send({ t: 'typing', text: input.current ? normalizeInput(input.current.value) : v }), 90);
+      setTimeout(() => send({ t: 'typing', text: input.current ? normalizeInput(input.current.value, snap.settings.lang) : v }), 90);
     }
   };
 
@@ -445,7 +466,7 @@ function WordInput({ snap, send, reject }: { snap: Snapshot; send: Send; reject:
         />
       </div>
       <p className={shown ? 'hint error' : 'hint'}>
-        {shown ? t.errors[shown](letter.toUpperCase()) : ' '}
+        {shown ? t.errors[shown](letter.toUpperCase(), snap.settings.lang) : ' '}
       </p>
     </>
   );
@@ -507,7 +528,7 @@ function Avatar({ p, size }: { p: PlayerInfo; size: number }) {
   );
 }
 
-function RulesButton({ turnSeconds, web = false }: { turnSeconds: number; web?: boolean }) {
+function RulesButton({ turnSeconds, web = false, lang }: { turnSeconds: number; web?: boolean; lang?: Lang }) {
   const [open, setOpen] = useState(false);
   useEffect(() => {
     if (!open) return;
@@ -531,7 +552,7 @@ function RulesButton({ turnSeconds, web = false }: { turnSeconds: number; web?: 
             </button>
             <h2>{t.rulesTitle}</h2>
             <ol>
-              {t.rules(turnSeconds, !web).map((r, i) => (
+              {t.rules(turnSeconds, !web, lang).map((r, i) => (
                 <li key={i}>{r}</li>
               ))}
             </ol>
