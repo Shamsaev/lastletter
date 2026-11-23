@@ -57,7 +57,17 @@ npx cloudflared tunnel --url http://localhost:5173
 
 Полученный `*.trycloudflare.com` поставь в URL Mapping для `/`.
 
-## Деплой
+## Деплой на Render (бесплатно)
+
+1. [dashboard.render.com](https://dashboard.render.com) → **New → Blueprint** → выбери репозиторий `last-letter`. Render прочитает `render.yaml` (Docker, Free, Frankfurt).
+2. Заполни `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `DISCORD_BOT_TOKEN` → Apply. Первая сборка ~3–5 мин.
+3. Получишь адрес `https://last-letter-xxxx.onrender.com`. Проверка: `/api/health` → `{"ok":true,...}`.
+4. В Discord Developer Portal → Activities → URL Mappings: `/` → `last-letter-xxxx.onrender.com`.
+5. **Чтобы сервер не засыпал:** на [cron-job.org](https://cron-job.org) создай задачу `GET https://last-letter-xxxx.onrender.com/api/health` каждые 10 минут. Бесплатных 750 часов в месяц хватает на один сервис 24/7.
+
+Ограничения бесплатного Render: диск временный — `data/stats.json` обнуляется при каждом новом деплое (push в `main`) и перезапуске. Если статистика должна жить вечно, нужна база данных.
+
+## Деплой на свой сервер
 
 Нужен хост с **WebSocket** и HTTPS. Vercel/Netlify не подойдут (serverless без постоянных соединений).
 
